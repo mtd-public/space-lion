@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#05050f" />
+<title>Space Lion (Prototype)</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+
+    <!-- Start screen -->
+    <div id="screen-start" class="screen">
+      <h1 class="title">SPACE <span class="accent">LION</span></h1>
+      <p class="subtitle">Prototype build &mdash; movement, shooting &amp; tower enemies.</p>
+      <div class="howto">
+        <div><span class="key">Thumbstick</span> bottom-left &mdash; steer your ship</div>
+        <div><span class="key">Tap anywhere else</span> &mdash; fire</div>
+      </div>
+      <button id="btn-start" class="btn">TAP TO LAUNCH</button>
+    </div>
+
+    <!-- Game over screen -->
+    <div id="screen-gameover" class="screen hidden">
+      <h1 class="title over">SHIP LOST</h1>
+      <p class="subtitle" id="gameover-stats"></p>
+      <button id="btn-retry" class="btn">TRY AGAIN</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
