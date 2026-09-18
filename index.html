@@ -4,17 +4,19 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, minimum-scale=1, user-scalable=no, viewport-fit=cover" />
 <meta name="theme-color" content="#05050f" />
-<title>Space Lion (Prototype)</title>
+<title>Space Lion</title>
 <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
   <div id="app">
-    <canvas id="game"></canvas>
+    <canvas id="webgl"></canvas>
+    <canvas id="hud"></canvas>
+    <div id="input-layer"></div>
 
     <!-- Start screen -->
     <div id="screen-start" class="screen">
       <h1 class="title">SPACE <span class="accent">LION</span></h1>
-      <p class="subtitle">Prototype build &mdash; movement, shooting &amp; tower enemies.</p>
+      <p class="subtitle">Hunt the towers. Grab the gold. Fly the rings.<br/>Break the Sentinel. Slay the Lion.</p>
       <div class="howto">
         <div><span class="key">Thumbstick</span> bottom-left &mdash; steer your ship</div>
         <div><span class="key">Tap anywhere else</span> &mdash; fire</div>
@@ -28,7 +30,29 @@
       <p class="subtitle" id="gameover-stats"></p>
       <button id="btn-retry" class="btn">TRY AGAIN</button>
     </div>
+
+    <!-- Victory screen -->
+    <div id="screen-victory" class="screen hidden">
+      <h1 class="title win">VICTORY</h1>
+      <p class="subtitle">The Space Lion falls. The sector is free.</p>
+      <p class="subtitle" id="victory-stats"></p>
+      <button id="btn-play-again" class="btn">PLAY AGAIN</button>
+    </div>
   </div>
+
+  <!-- three.js r136 (classic global build, vendored) -->
+  <script src="js/vendor/three.min.js"></script>
+  <!-- postprocessing / bloom (classic examples/js build, vendored; best-effort, game runs fine without it) -->
+  <script src="js/vendor/postprocessing/Pass.js"></script>
+  <script src="js/vendor/postprocessing/MaskPass.js"></script>
+  <script src="js/vendor/postprocessing/RenderPass.js"></script>
+  <script src="js/vendor/postprocessing/ShaderPass.js"></script>
+  <script src="js/vendor/shaders/CopyShader.js"></script>
+  <script src="js/vendor/shaders/LuminosityHighPassShader.js"></script>
+  <script src="js/vendor/postprocessing/UnrealBloomPass.js"></script>
+  <script src="js/vendor/postprocessing/EffectComposer.js"></script>
+  <!-- procedural ship/tower/boss asset factory -->
+  <script src="js/vendor/space-assets.js"></script>
 
   <script type="module" src="js/main.js"></script>
 </body>
