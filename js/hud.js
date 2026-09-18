@@ -1,7 +1,7 @@
 import { clamp } from './utils.js';
 
 export function drawHUD(ctx, width, height, opts) {
-  const { score, gold, player, sentinel, spaceLion, floatingTexts, messages } = opts;
+  const { score, gold, player, sentinel, spaceLion, floatingTexts, messages, levelName } = opts;
 
   ctx.clearRect(0, 0, width, height);
   ctx.save();
@@ -20,10 +20,17 @@ export function drawHUD(ctx, width, height, opts) {
   ctx.fillStyle = '#ffc247';
   ctx.fillText(`✦ ${gold}`, width - 16, 14);
 
+  if (levelName) {
+    ctx.textAlign = 'left';
+    ctx.font = '600 11px system-ui, sans-serif';
+    ctx.fillStyle = 'rgba(234,242,255,0.75)';
+    ctx.fillText(levelName, 16, 34);
+  }
+
   // Player health bar
   const barW = Math.min(220, width * 0.5);
   const barH = 12;
-  const hx = 16, hy = 46;
+  const hx = 16, hy = 58;
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.fillRect(hx, hy, barW, barH);
   const pct = clamp(player.health / player.maxHealth, 0, 1);
@@ -35,9 +42,9 @@ export function drawHUD(ctx, width, height, opts) {
 
   // Boss bar (top-center)
   if (sentinel && sentinel.isActive) {
-    drawBossBar(ctx, width, 'SENTINEL', sentinel.health.fraction, 3, '#ff4470');
+    drawBossBar(ctx, width, 'SENTINEL', sentinel.health.fraction, sentinel.health.phases, '#ff4470');
   } else if (spaceLion && spaceLion.active) {
-    drawBossBar(ctx, width, 'SPACE LION', spaceLion.health.fraction, 1, '#ffb347');
+    drawBossBar(ctx, width, 'SPACE LION', spaceLion.health.fraction, spaceLion.health.phases, '#ffb347');
   }
 
   ctx.restore();

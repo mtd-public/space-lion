@@ -17,9 +17,12 @@ const inputLayer = document.getElementById('input-layer');
 const screenStart = document.getElementById('screen-start');
 const screenGameOver = document.getElementById('screen-gameover');
 const screenVictory = document.getElementById('screen-victory');
+const screenPaused = document.getElementById('screen-paused');
 const btnStart = document.getElementById('btn-start');
 const btnRetry = document.getElementById('btn-retry');
 const btnPlayAgain = document.getElementById('btn-play-again');
+const btnPause = document.getElementById('btn-pause');
+const btnResume = document.getElementById('btn-resume');
 const gameoverStats = document.getElementById('gameover-stats');
 const victoryStats = document.getElementById('victory-stats');
 
@@ -138,7 +141,7 @@ const input = new InputManager(inputLayer);
 // ---------- game state ----------
 
 const state = {
-  mode: 'menu', // 'menu' | 'playing' | 'gameover' | 'victory'
+  mode: 'menu', // 'menu' | 'playing' | 'paused' | 'gameover' | 'victory'
   score: 0,
   gold: 0,
   towersDestroyed: 0,
@@ -207,11 +210,29 @@ function startGame() {
   screenStart.classList.add('hidden');
   screenGameOver.classList.add('hidden');
   screenVictory.classList.add('hidden');
+  screenPaused.classList.add('hidden');
+  btnPause.classList.remove('hidden');
+}
+
+function pauseGame() {
+  if (state.mode !== 'playing') return;
+  state.mode = 'paused';
+  btnPause.classList.add('hidden');
+  screenPaused.classList.remove('hidden');
+}
+
+function resumeGame() {
+  if (state.mode !== 'paused') return;
+  state.mode = 'playing';
+  screenPaused.classList.add('hidden');
+  btnPause.classList.remove('hidden');
 }
 
 btnStart.addEventListener('click', startGame);
 btnRetry.addEventListener('click', startGame);
 btnPlayAgain.addEventListener('click', startGame);
+btnPause.addEventListener('click', pauseGame);
+btnResume.addEventListener('click', resumeGame);
 
 resize();
 resetGame();
@@ -393,6 +414,7 @@ function update(dt, t) {
 
   if (!player.alive) {
     state.mode = 'gameover';
+    btnPause.classList.add('hidden');
     gameoverStats.textContent = `Score: ${state.score} · Gold: ${state.gold} · Towers destroyed: ${state.towersDestroyed}`;
     screenGameOver.classList.remove('hidden');
   }
@@ -401,6 +423,7 @@ function update(dt, t) {
 function triggerVictory() {
   if (state.mode !== 'playing') return;
   state.mode = 'victory';
+  btnPause.classList.add('hidden');
   victoryStats.textContent = `Score: ${state.score} · Gold: ${state.gold} · Towers destroyed: ${state.towersDestroyed}`;
   screenVictory.classList.remove('hidden');
 }

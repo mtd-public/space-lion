@@ -3,8 +3,8 @@ import { Bullet } from './entities.js';
 const SA = window.SpaceAssets;
 
 // The recurring mini-boss. Its health is persistent across encounters: each
-// time it's engaged you can chip away exactly one third before it warps out
-// and flees for a while; it comes back at whatever health remained.
+// time it's engaged you can chip away exactly half before it warps out and
+// flees for a while; it comes back at whatever health remained.
 export class Sentinel {
   constructor(scene, x, z) {
     this.scene = scene;
@@ -17,7 +17,7 @@ export class Sentinel {
     this.mesh.visible = false;
     scene.add(this.mesh);
 
-    this.health = new SA.BossHealth(180, 3);
+    this.health = new SA.BossHealth(180, 2);
     this.state = 'dormant'; // dormant | spawning | active | retreating | defeated
     this.spawnTimer = 25;
     this.respawnDelay = 50;

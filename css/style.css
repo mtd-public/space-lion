@@ -145,3 +145,29 @@ html, body {
 .btn:active {
   transform: scale(0.96);
 }
+
+.icon-btn {
+  position: absolute;
+  top: max(14px, env(safe-area-inset-top));
+  right: 14px;
+  z-index: 15;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(180, 190, 255, 0.35);
+  background: rgba(20, 20, 40, 0.55);
+  color: #dfe3ff;
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: auto;
+  appearance: none;
+  cursor: pointer;
+}
+
+.icon-btn:active {
+  transform: scale(0.94);
+}
+
+.icon-btn.hidden {
+  display: none;
+}
