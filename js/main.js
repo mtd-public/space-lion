@@ -3,6 +3,7 @@ import { Player, Tower } from './entities.js';
 import { GoldPickup, RingCourse } from './collectibles.js';
 import { Sentinel, SpaceLionBoss } from './boss.js';
 import { generateLayout, buildBackdrop, WORLD_HALF_X, WORLD_HALF_Z, BOSS_ARENA, PLAYER_START } from './world.js';
+import { Fx } from './fx.js';
 import { worldToScreen, disposeObject3D } from './three-utils.js';
 import { clamp, dist } from './utils.js';
 import { drawHUD } from './hud.js';
@@ -34,33 +35,33 @@ let dpr = Math.max(1, Math.min(window.devicePixelRatio || 1, 2));
 
 const scene = new THREE.Scene();
 
+// Toy look (after gig-ambulance): sRGB output with linear-authored colours,
+// no tone mapping so pastels stay true, physically-based light intensities,
+// and soft shadow maps for the drop shadows.
 const renderer = new THREE.WebGLRenderer({ canvas: webglCanvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(dpr);
-if (THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.physicallyCorrectLights = true;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-const VIEW_SIZE = 20; // half-height of the visible world, in world units
-const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 500);
-camera.up.set(0, 0, -1);
+// Orthographic camera pitched like a toy diorama. Screen-up is still world -Z,
+// but world Z is foreshortened by sin(pitch) on screen.
+const CAM_PITCH = SA.CAM_PITCH;
+const SIN_PITCH = Math.sin(CAM_PITCH);
+const CAM_OFFSET = new THREE.Vector3(0, Math.sin(CAM_PITCH), Math.cos(CAM_PITCH)).multiplyScalar(120);
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 400);
+const camFocus = new THREE.Vector3();
+let shake = 0;
 
 const hudCtx = hudCanvas.getContext('2d');
 
-let composer = null;
-let bloomPass = null;
-function setupComposer() {
-  try {
-    composer = new THREE.EffectComposer(renderer);
-    composer.addPass(new THREE.RenderPass(scene, camera));
-    bloomPass = new THREE.UnrealBloomPass(new THREE.Vector2(width, height), 0.75, 0.55, 0.84);
-    composer.addPass(bloomPass);
-  } catch (e) {
-    console.warn('Bloom post-processing unavailable, rendering without it.', e);
-    composer = null;
-    bloomPass = null;
-  }
-}
-setupComposer();
+// env(safe-area-inset-*) isn't readable from canvas code, so measure it.
+const safeProbe = document.createElement('div');
+safeProbe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);';
+document.body.appendChild(safeProbe);
+let safeTop = 0, safeBottom = 0;
 
 function resize() {
   width = window.innerWidth;
@@ -70,11 +71,14 @@ function resize() {
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height, true);
 
+  // Half-height of the view: at least 12 units, widened in portrait so the
+  // screen is always ~18 units across.
   const aspect = width / height;
-  camera.left = -VIEW_SIZE * aspect;
-  camera.right = VIEW_SIZE * aspect;
-  camera.top = VIEW_SIZE;
-  camera.bottom = -VIEW_SIZE;
+  const half = Math.max(12, 9 / aspect);
+  camera.left = -half * aspect;
+  camera.right = half * aspect;
+  camera.top = half;
+  camera.bottom = -half;
   camera.updateProjectionMatrix();
 
   hudCanvas.width = Math.floor(width * dpr);
@@ -83,56 +87,39 @@ function resize() {
   hudCanvas.style.height = height + 'px';
   hudCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-  if (composer) composer.setSize(width, height);
+  const cs = getComputedStyle(safeProbe);
+  safeTop = parseFloat(cs.paddingTop) || 0;
+  safeBottom = parseFloat(cs.paddingBottom) || 0;
 }
 window.addEventListener('resize', resize);
 
-// ---------- lighting / environment / backdrop ----------
-
-scene.add(new THREE.HemisphereLight(0x8fa8ff, 0x0a0a18, 0.75));
-const sun = new THREE.DirectionalLight(0xfff2df, 1.2);
-sun.position.set(-40, 70, 25);
-scene.add(sun);
-
-scene.environment = SA.createEnvironment(renderer);
-buildBackdrop(THREE, scene);
-
-// ---------- lightweight destruction sparks ----------
-
-class Spark {
-  constructor(scene, x, z, color) {
-    this.scene = scene;
-    this.sprite = SA.glow(color, 1.1, 1);
-    this.sprite.position.set(x, 0.6, z);
-    scene.add(this.sprite);
-    const a = Math.random() * Math.PI * 2;
-    const s = 4 + Math.random() * 9;
-    this.vx = Math.cos(a) * s;
-    this.vz = Math.sin(a) * s;
-    this.vy = 2 + Math.random() * 4;
-    this.life = 0.45 + Math.random() * 0.3;
-    this.maxLife = this.life;
-    this.dead = false;
+function placeCamera(x, z, dt) {
+  camFocus.set(x, 0, z);
+  camera.position.copy(camFocus).add(CAM_OFFSET);
+  if (shake > 0) {
+    camera.position.x += (Math.random() - 0.5) * shake;
+    camera.position.y += (Math.random() - 0.5) * shake;
+    shake = Math.max(0, shake - (dt || 0) * 3);
   }
-  update(dt) {
-    this.sprite.position.x += this.vx * dt;
-    this.sprite.position.z += this.vz * dt;
-    this.sprite.position.y += this.vy * dt;
-    this.vx *= 0.9; this.vz *= 0.9; this.vy -= dt * 6;
-    this.life -= dt;
-    const k = Math.max(0, this.life / this.maxLife);
-    this.sprite.material.opacity = k * 0.95;
-    this.sprite.scale.setScalar(1.1 * (0.5 + 0.5 * k));
-    if (this.life <= 0) this.dead = true;
-  }
-  dispose() {
-    this.scene.remove(this.sprite);
-    this.sprite.material.dispose();
-  }
+  camera.lookAt(camFocus);
+  sun.position.copy(camFocus).add(SUN_OFFSET);
+  sun.target.position.copy(camFocus);
 }
-function spawnSparks(list, scene, x, z, color, count) {
-  for (let i = 0; i < count; i++) list.push(new Spark(scene, x, z, color));
-}
+
+// ---------- lighting / backdrop ----------
+
+scene.add(new THREE.HemisphereLight(SA.lin(0xf1eaff), SA.lin(0x6e5ac8), 1.9));
+const sun = new THREE.DirectionalLight(SA.lin(0xfff1dc), 2.3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -38, right: 38, top: 38, bottom: -38, near: 1, far: 140 });
+sun.shadow.bias = -0.0008;
+sun.shadow.normalBias = 0.03;
+const SUN_OFFSET = new THREE.Vector3(-20, 45, 12);
+scene.add(sun, sun.target);
+
+const backdrop = buildBackdrop(THREE, scene);
+const fx = new Fx(scene);
 
 // ---------- input ----------
 
@@ -147,19 +134,19 @@ const state = {
   towersDestroyed: 0,
 };
 
-let player, bullets, enemyBullets, towers, golds, ringCourses, sparks;
+let player, bullets, enemyBullets, towers, golds, ringCourses;
 let sentinel, spaceLion, spaceLionPending, spaceLionTimer;
 let floatingTexts, messages;
 let elapsed;
 
-function addMessage(text, color) {
-  messages.push({ text, color, life: 3, maxLife: 3 });
+function addMessage(text, kind) {
+  messages.push({ text, kind, life: 2.6, maxLife: 2.6 });
   if (messages.length > 2) messages.shift();
 }
 
 function addFloatingText(x, y, z, text, color) {
   const p = worldToScreen(THREE, x, y, z, camera, width, height);
-  floatingTexts.push({ x: p.x, y: p.y, text, color, life: 1, maxLife: 1 });
+  floatingTexts.push({ x: p.x, y: p.y, text, color, life: 1.1, maxLife: 1.1 });
 }
 
 function disposeEntities() {
@@ -168,7 +155,7 @@ function disposeEntities() {
   for (const g of golds) g.dispose();
   for (const b of bullets) b.dispose();
   for (const b of enemyBullets) b.dispose();
-  for (const s of sparks) s.dispose();
+  fx.clear();
   if (player) player.dispose();
   if (sentinel) { scene.remove(sentinel.mesh); disposeObject3D(sentinel.mesh); }
   if (spaceLion) { scene.remove(spaceLion.mesh); disposeObject3D(spaceLion.mesh); }
@@ -181,7 +168,6 @@ function resetGame() {
   elapsed = 0;
   bullets = [];
   enemyBullets = [];
-  sparks = [];
   floatingTexts = [];
   messages = [];
   state.score = 0;
@@ -200,8 +186,8 @@ function resetGame() {
   spaceLionPending = false;
   spaceLionTimer = 0;
 
-  camera.position.set(player.x, 55, player.z);
-  camera.lookAt(player.x, 0, player.z);
+  shake = 0;
+  placeCamera(player.x, player.z, 0);
 }
 
 function startGame() {
@@ -240,10 +226,13 @@ resetGame();
 // ---------- boss event -> HUD message wiring ----------
 
 function onSentinelEvent(kind) {
-  if (kind === 'sentinel-spawn') addMessage('SENTINEL DETECTED', '#ff4470');
-  else if (kind === 'sentinel-retreat') addMessage('SENTINEL RETREATING', '#ffb347');
+  if (kind === 'sentinel-spawn') addMessage('SENTINEL DETECTED!', 'bad');
+  else if (kind === 'sentinel-retreat') { addMessage('SENTINEL RETREATING', 'warn'); fx.explode(sentinel.worldX, sentinel.worldZ); shake = 0.5; }
   else if (kind === 'sentinel-defeated') {
-    addMessage('SENTINEL DESTROYED', '#5be36a');
+    addMessage('SENTINEL DESTROYED!', 'good');
+    fx.explode(sentinel.worldX, sentinel.worldZ);
+    fx.explode(sentinel.worldX + 1.5, sentinel.worldZ - 1);
+    shake = 0.9;
     spaceLionPending = true;
     spaceLionTimer = 6;
   }
@@ -254,11 +243,13 @@ function onSentinelEvent(kind) {
 function update(dt, t) {
   if (state.mode !== 'playing') return;
 
+  // Screen direction -> world heading: undo the camera pitch's foreshortening
+  // of world Z so the ship flies where the stick points on screen.
   if (input.hasDirection) {
-    player.setTargetAngle(Math.atan2(input.dirY, input.dirX));
+    player.setTargetAngle(Math.atan2(input.dirY / SIN_PITCH, input.dirX));
   } else {
     const kb = input.keyboardDirection();
-    if (kb) player.setTargetAngle(Math.atan2(kb.y, kb.x));
+    if (kb) player.setTargetAngle(Math.atan2(kb.y / SIN_PITCH, kb.x));
   }
 
   player.update(dt, t);
@@ -269,8 +260,7 @@ function update(dt, t) {
   if (wantsFire && player.canFire()) bullets.push(player.fire());
   input.clearFrameFlags();
 
-  camera.position.set(player.x, 55, player.z);
-  camera.lookAt(player.x, 0, player.z);
+  placeCamera(player.x, player.z, dt);
 
   // Reticle lock-on flourish: light up if aimed near a live hostile.
   let locked = false;
@@ -292,7 +282,8 @@ function update(dt, t) {
     if (spaceLionTimer <= 0) {
       spaceLionPending = false;
       spaceLion.spawn();
-      addMessage('THE SPACE LION AWAKENS', '#ffd76a');
+      addMessage('THE SPACE LION AWAKENS!', 'gold');
+      shake = 0.6;
     }
   }
 
@@ -304,11 +295,13 @@ function update(dt, t) {
       if (dist(b.x, b.z, tw.x, tw.z) < tw.radius + b.radius) {
         b.dead = true;
         const justDied = tw.takeDamage(b.damage);
+        if (!justDied) { fx.hit(b.x, b.z); tw.mesh.userData.hitFlash && tw.mesh.userData.hitFlash(); }
         if (justDied) {
-          spawnSparks(sparks, scene, tw.x, tw.z, 0xffb14d, 20);
+          fx.explode(tw.x, tw.z);
+          shake = Math.max(shake, 0.45);
           state.score += tw.scoreValue;
           state.towersDestroyed++;
-          addFloatingText(tw.x, 1.2, tw.z, `+${tw.scoreValue}`, '#ffd76a');
+          addFloatingText(tw.x, 1.2, tw.z, `+${tw.scoreValue}`, '#ffd45e');
         }
         break;
       }
@@ -321,9 +314,10 @@ function update(dt, t) {
       if (b.dead) continue;
       if (dist(b.x, b.z, sentinel.worldX, sentinel.worldZ) < sentinel.radius + b.radius) {
         b.dead = true;
+        fx.hit(b.x, b.z);
         const result = sentinel.damage(b.damage, onSentinelEvent);
-        if (result === 'retreat') { state.score += sentinel.scoreValue; addFloatingText(sentinel.worldX, 2, sentinel.worldZ, `+${sentinel.scoreValue}`, '#ff9ab0'); }
-        else if (result === 'defeated') { state.score += sentinel.defeatScoreValue; addFloatingText(sentinel.worldX, 2, sentinel.worldZ, `+${sentinel.defeatScoreValue}`, '#5be36a'); }
+        if (result === 'retreat') { state.score += sentinel.scoreValue; addFloatingText(sentinel.worldX, 2, sentinel.worldZ, `+${sentinel.scoreValue}`, '#ff9fbd'); }
+        else if (result === 'defeated') { state.score += sentinel.defeatScoreValue; addFloatingText(sentinel.worldX, 2, sentinel.worldZ, `+${sentinel.defeatScoreValue}`, '#3ddc84'); }
         else if (result === 'hit') state.score += 15;
       }
     }
@@ -335,10 +329,13 @@ function update(dt, t) {
       if (b.dead) continue;
       if (dist(b.x, b.z, spaceLion.x, spaceLion.z) < spaceLion.radius + b.radius) {
         b.dead = true;
+        fx.hit(b.x, b.z, 'orange');
         const result = spaceLion.damage(b.damage);
         if (result === 'defeated') {
           state.score += 5000;
-          addFloatingText(spaceLion.x, 3, spaceLion.z, '+5000', '#ffd76a');
+          addFloatingText(spaceLion.x, 3, spaceLion.z, '+5000', '#ffd45e');
+          for (let k = 0; k < 4; k++) fx.explode(spaceLion.x + (k - 1.5) * 2, spaceLion.z + (k % 2) * 2);
+          shake = 1.2;
           triggerVictory();
         } else if (result === 'hit') {
           state.score += 12;
@@ -353,16 +350,16 @@ function update(dt, t) {
     if (dist(b.x, b.z, player.x, player.z) < player.radius + b.radius) {
       b.dead = true;
       const hit = player.takeDamage(b.damage);
-      if (hit) spawnSparks(sparks, scene, player.x, player.z, 0x7db8ff, 8);
+      if (hit) { fx.hurt(player.x, player.z); shake = Math.max(shake, 0.35); };
     }
   }
 
   // boss body contact damage
   if (sentinel.isActive && dist(player.x, player.z, sentinel.worldX, sentinel.worldZ) < player.radius + sentinel.radius) {
-    if (player.takeDamage(18)) spawnSparks(sparks, scene, player.x, player.z, 0x7db8ff, 8);
+    if (player.takeDamage(18)) { fx.hurt(player.x, player.z); shake = Math.max(shake, 0.35); };
   }
   if (spaceLion.active && dist(player.x, player.z, spaceLion.x, spaceLion.z) < player.radius + spaceLion.radius) {
-    if (player.takeDamage(spaceLion.contactDamage)) spawnSparks(sparks, scene, player.x, player.z, 0x7db8ff, 8);
+    if (player.takeDamage(spaceLion.contactDamage)) { fx.hurt(player.x, player.z); shake = Math.max(shake, 0.35); };
   }
 
   // player vs gold
@@ -372,7 +369,8 @@ function update(dt, t) {
       g.collect();
       state.gold += g.value;
       state.score += 15;
-      addFloatingText(g.x, 1.2, g.z, '+15', '#ffc247');
+      addFloatingText(g.x, 1.2, g.z, '+15', '#ffd45e');
+      fx.sparkle(g.x, g.z, 'star', 5);
     }
   }
 
@@ -383,10 +381,12 @@ function update(dt, t) {
     if (dist(player.x, player.z, pos.x, pos.z) < player.radius + rc.collisionRadius) {
       const completedCourse = rc.clearNext();
       state.score += 60;
-      addFloatingText(pos.x, 1.2, pos.z, '+60', '#4fe3ff');
+      addFloatingText(pos.x, 1.2, pos.z, '+60', '#6ff0dc');
+      fx.sparkle(pos.x, pos.z, 'teal', 6);
+      fx.shock(pos.x, pos.z, 0x35c3b2, 0.45);
       if (completedCourse) {
         state.score += 300;
-        addMessage('RING COURSE CLEAR +300', '#4fe3ff');
+        addMessage('RING COURSE CLEAR +300', 'ring');
       }
     }
   }
@@ -403,9 +403,7 @@ function update(dt, t) {
 
   for (const rc of ringCourses) rc.update(dt, t);
 
-  for (const s of sparks) s.update(dt);
-  for (const s of sparks) if (s.dead) s.dispose();
-  sparks = sparks.filter((s) => !s.dead);
+  fx.update(dt);
 
   for (const f of floatingTexts) { f.y -= 28 * dt; f.life -= dt; }
   floatingTexts = floatingTexts.filter((f) => f.life > 0);
@@ -441,10 +439,14 @@ function reapTowers() {
 }
 
 function render() {
-  if (composer) composer.render();
-  else renderer.render(scene, camera);
+  renderer.render(scene, camera);
 
   drawHUD(hudCtx, width, height, {
+    input,
+    playing: state.mode === 'playing',
+    safeTop,
+    safeBottom,
+    time: elapsed,
     score: state.score,
     gold: state.gold,
     player,
@@ -463,6 +465,7 @@ function loop(now) {
   elapsed += dt;
 
   update(dt, elapsed);
+  backdrop.update(elapsed);
   reapTowers();
   render();
 
@@ -481,5 +484,7 @@ window.__game = {
   get bullets() { return bullets; },
   get sentinel() { return sentinel; },
   get spaceLion() { return spaceLion; },
+  camera,
+  fx,
   startGame,
 };

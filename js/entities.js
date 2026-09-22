@@ -9,7 +9,7 @@ export class Bullet {
     this.scene = scene;
     this.owner = owner; // 'player' | 'enemy'
     this.mesh = owner === 'player' ? SA.makePlayerBolt() : SA.makeTowerShot();
-    this.mesh.position.set(x, 0.15, z);
+    this.mesh.position.set(x, SA.FLIGHT_Y, z);
     this.mesh.rotation.y = yawForDirection(Math.cos(angle), Math.sin(angle));
     scene.add(this.mesh);
 
@@ -97,6 +97,8 @@ export class Player {
 
     if (this.fireCooldown > 0) this.fireCooldown -= dt;
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
+    // blink while invulnerable after a hit
+    this.mesh.visible = !(this.invulnTimer > 0 && Math.floor(t * 16) % 2 === 0);
   }
 
   canFire() {

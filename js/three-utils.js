@@ -17,15 +17,15 @@ export function worldToScreen(THREE, x, y, z, camera, width, height) {
   };
 }
 
-// Frees GPU resources for an object and everything under it. Safe to call on
-// objects that share the space-assets glow texture — only materials/geometries
-// owned by this subtree are disposed, never shared textures.
+// Frees GPU resources for an object and everything under it. Geometries and
+// materials that space-assets marks as shared (bullets, fx particles, the ink
+// outline material) are left alone, since other live objects still use them.
 export function disposeObject3D(obj) {
   obj.traverse((child) => {
-    if (child.geometry) child.geometry.dispose();
+    if (child.geometry && !child.geometry.userData.shared) child.geometry.dispose();
     if (child.material) {
       const mats = Array.isArray(child.material) ? child.material : [child.material];
-      for (const m of mats) m.dispose();
+      for (const m of mats) if (!m.userData.shared) m.dispose();
     }
   });
 }

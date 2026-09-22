@@ -38,6 +38,7 @@ export class Sentinel {
       return;
     }
 
+    this.mesh.userData.lookAt(player.x, player.z);
     this.mesh.userData.update(t, dt);
 
     if (this.state === 'active') {
@@ -135,6 +136,7 @@ export class SpaceLionBoss {
 
   update(dt, t, player, bulletsOut) {
     if (!this.active) return;
+    this.mesh.userData.lookAt(player.x, player.z);
     this.mesh.userData.update(t, dt);
 
     this.roarTimer -= dt;
